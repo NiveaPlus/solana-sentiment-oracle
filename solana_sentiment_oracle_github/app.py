@@ -8,9 +8,8 @@ from crypto_sentiment_oracle import aggregate_sentiment
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Solana Sentiment Oracle", layout="wide")
-st_autorefresh(interval=300000, key="refresh")  # Refresh every 5 minutes
+st_autorefresh(interval=300000, key="refresh")
 
-# Timeframe mapping
 timeframes = {
     "1h": {"interval": "1m", "limit": 60},
     "3h": {"interval": "3m", "limit": 60},
@@ -45,28 +44,21 @@ selected_range = st.selectbox("Select Time Range", list(timeframes.keys()), inde
 interval_info = timeframes[selected_range]
 price_data = fetch_price_history(interval=interval_info["interval"], limit=interval_info["limit"])
 
-with col2:
-    try:
-        sentiment = aggregate_sentiment()
-        st.write("📥 Sentiment:", sentiment)
-    except Exception as e:
-        st.error(f"❌ Error fetching sentiment: {e}")
-        sentiment = {"Buy": 0, "Hold": 100, "Sell": 0, "signal": "Hold"}
+# Collect sentiment data
+try:
+    sentiment = aggregate_sentiment()
+    st.write("📥 Sentiment:", sentiment)
+except Exception as e:
+    st.error(f"❌ Error fetching sentiment: {e}")
+    sentiment = {"Buy": 0, "Hold": 100, "Sell": 0, "signal": "Hold"}
 
-    st.metric("Buy %", f"{sentiment.get('Buy', 0)}%")
-    st.metric("Hold %", f"{sentiment.get('Hold', 0)}%")
-    st.metric("Sell %", f"{sentiment.get('Sell', 0)}%")
-    st.progress(sentiment.get("Buy", 0) / 100)
-    st.caption("Sentiment updates every 5 minutes")
-
-# Sentiment history for tracking signal flips
+# Sentiment state tracking
 if "sentiment_history" not in st.session_state:
     st.session_state.sentiment_history = []
 
 if "last_signal" not in st.session_state:
     st.session_state.last_signal = None
 
-# Track signal change
 signal_now = sentiment.get("signal")
 if signal_now != st.session_state.last_signal:
     st.session_state.sentiment_history.append({
@@ -75,25 +67,34 @@ if signal_now != st.session_state.last_signal:
     })
     st.session_state.last_signal = signal_now
 
-# Plot with sentiment dots
-fig, ax = plt.subplots()
-ax.plot(price_data["Open time"], price_data["Close"], label="SOL/USDT", linewidth=2)
+# LEFT COLUMN: Chart
+with col1:
+    fig, ax = plt.subplots()
+    ax.plot(price_data["Open time"], price_data["Close"], label="SOL/USDT", linewidth=2)
 
-# Add sentiment change dots
-dot_colors = {"Buy": "red", "Hold": "orange", "Sell": "green"}
-for entry in st.session_state.sentiment_history:
-    time_match = price_data[price_data["Open time"] >= entry["Time"]]
-    if not time_match.empty:
-        dot_time = time_match.iloc[0]["Open time"]
-        dot_price = time_match.iloc[0]["Close"]
-        ax.scatter(dot_time, dot_price, color=dot_colors.get(entry["Signal"], "blue"), s=80, zorder=5)
+    dot_colors = {"Buy": "red", "Hold": "orange", "Sell": "green"}
+    for entry in st.session_state.sentiment_history:
+        time_match = price_data[price_data["Open time"] >= entry["Time"]]
+        if not time_match.empty:
+            dot_time = time_match.iloc[0]["Open time"]
+            dot_price = time_match.iloc[0]["Close"]
+            ax.scatter(dot_time, dot_price, color=dot_colors.get(entry["Signal"], "blue"), s=80, zorder=5)
 
-ax.set_title("SOL/USDT Price with Sentiment Signals")
-ax.set_xlabel("Time")
-ax.set_ylabel("Price (USDT)")
-st.pyplot(fig)
+    ax.set_title("SOL/USDT Price with Sentiment Dots")
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Price (USDT)")
+    plt.xticks(rotation=90)
+    st.pyplot(fig)
 
-# Sentiment trend chart
+# RIGHT COLUMN: Sentiment
+with col2:
+    st.metric("Buy %", f"{sentiment.get('Buy', 0)}%")
+    st.metric("Hold %", f"{sentiment.get('Hold', 0)}%")
+    st.metric("Sell %", f"{sentiment.get('Sell', 0)}%")
+    st.progress(sentiment.get("Buy", 0) / 100)
+    st.caption("Sentiment updates every 5 minutes")
+
+# Show sentiment history
 history_df = pd.DataFrame([
     {"Time": entry["Time"].strftime("%H:%M:%S"), "Signal": entry["Signal"]}
     for entry in st.session_state.sentiment_history
