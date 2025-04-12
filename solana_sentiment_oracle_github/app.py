@@ -1,4 +1,4 @@
-# app.py
+# app.py (with fallback + debug for sentiment errors)
 
 import streamlit as st
 import requests
@@ -63,13 +63,19 @@ with col1:
     price_data = fetch_price_history(interval=interval, limit=limit)
     st.line_chart(price_data.set_index("Open time"))
 
-# Display current sentiment
+# Display current sentiment (with error handling)
 with col2:
-    sentiment = aggregate_sentiment()
-    st.metric("Buy %", f"{sentiment['Buy']}%")
-    st.metric("Hold %", f"{sentiment['Hold']}%")
-    st.metric("Sell %", f"{sentiment['Sell']}%")
-    st.progress(sentiment["Buy"] / 100)
+    try:
+        sentiment = aggregate_sentiment()
+        st.write("📥 Sentiment:", sentiment)  # Debug output
+    except Exception as e:
+        st.error(f"❌ Error fetching sentiment: {e}")
+        sentiment = {"Buy": 0, "Hold": 100, "Sell": 0}
+
+    st.metric("Buy %", f"{sentiment.get('Buy', 0)}%")
+    st.metric("Hold %", f"{sentiment.get('Hold', 0)}%")
+    st.metric("Sell %", f"{sentiment.get('Sell', 0)}%")
+    st.progress(sentiment.get("Buy", 0) / 100)
     st.caption("Sentiment updates every 5 minutes")
 
 # -----------------------------
@@ -82,12 +88,13 @@ if "sentiment_history" not in st.session_state:
 current_time = datetime.now().strftime("%H:%M:%S")
 st.session_state.sentiment_history.append({
     "Time": current_time,
-    "Buy": sentiment["Buy"],
-    "Hold": sentiment["Hold"],
-    "Sell": sentiment["Sell"]
+    "Buy": sentiment.get("Buy", 0),
+    "Hold": sentiment.get("Hold", 0),
+    "Sell": sentiment.get("Sell", 0)
 })
 
 # Show sentiment history chart
 history_df = pd.DataFrame(st.session_state.sentiment_history)
 st.subheader("📉 Sentiment History")
 st.line_chart(history_df.set_index("Time"))
+
