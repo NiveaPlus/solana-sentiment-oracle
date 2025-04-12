@@ -1,0 +1,1 @@
+# full oracle code from previous session
