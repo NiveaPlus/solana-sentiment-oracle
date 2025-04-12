@@ -5,12 +5,12 @@ import pandas as pd
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 from crypto_sentiment_oracle import aggregate_sentiment
-import matplotlib.pyplot as plt
+import altair as alt
 
 st.set_page_config(page_title="Solana Sentiment Oracle", layout="wide")
-st_autorefresh(interval=300000, key="refresh")  # Refresh every 5 minutes
+st_autorefresh(interval=300000, key="refresh")  # 5 minutes
 
-# Timeframe mapping for Binance
+# Timeframe mapping
 timeframes = {
     "1h": {"interval": "1m", "limit": 60},
     "3h": {"interval": "3m", "limit": 60},
@@ -37,6 +37,7 @@ def fetch_price_history(symbol="SOLUSDT", interval="1h", limit=200):
     df["Close"] = df["Close"].astype(float)
     return df[["Open time", "Close"]]
 
+# UI
 st.title("📊 Solana Sentiment Oracle")
 st.markdown("Real-time Solana market sentiment and price trends")
 
@@ -44,55 +45,70 @@ selected_range = st.selectbox("Select Time Range", list(timeframes.keys()), inde
 interval_info = timeframes[selected_range]
 price_data = fetch_price_history(interval=interval_info["interval"], limit=interval_info["limit"])
 
-# Get sentiment data
+# Sentiment
 try:
     sentiment = aggregate_sentiment()
 except Exception as e:
-    st.error(f"❌ Error fetching sentiment: {e}")
+    st.error(f"Error fetching sentiment: {e}")
     sentiment = {"Buy": 0, "Hold": 100, "Sell": 0, "signal": "Hold"}
 
-# -----------------------------
-# Track sentiment over time
-# -----------------------------
 if "sentiment_history" not in st.session_state:
     st.session_state.sentiment_history = []
 
 if "last_signal" not in st.session_state:
     st.session_state.last_signal = None
 
-# Always log every 5 minutes
+# Always log sentiment every 5 minutes
 st.session_state.sentiment_history.append({
     "Time": datetime.now(),
     "Signal": sentiment.get("signal")
 })
 st.session_state.last_signal = sentiment.get("signal")
 
-# -----------------------------
-# Layout: Chart (left) and Stats (right)
-# -----------------------------
+# Build sentiment DataFrame for dot plotting
+dot_colors = {"Buy": "red", "Hold": "orange", "Sell": "green"}
+dot_df = pd.DataFrame([
+    entry for entry in st.session_state.sentiment_history
+    if entry["Signal"] != "None"
+])
+
+# Match each dot with nearest available candle time
+if not dot_df.empty:
+    matched_dots = []
+    for entry in dot_df.to_dict(orient="records"):
+        match = price_data[price_data["Open time"] >= entry["Time"]]
+        if not match.empty:
+            row = match.iloc[0]
+            matched_dots.append({
+                "Open time": row["Open time"],
+                "Close": row["Close"],
+                "Signal": entry["Signal"],
+                "Color": dot_colors.get(entry["Signal"], "gray")
+            })
+    dot_df = pd.DataFrame(matched_dots)
+else:
+    dot_df = pd.DataFrame(columns=["Open time", "Close", "Signal", "Color"])
+
+# Layout
 col1, col2 = st.columns([3, 1])
 
 with col1:
-    fig, ax = plt.subplots()
-    ax.plot(price_data["Open time"], price_data["Close"], label="SOL/USDT", linewidth=2)
+    base = alt.Chart(price_data).mark_line().encode(
+        x=alt.X("Open time:T", title="Time"),
+        y=alt.Y("Close:Q", title="Price (USDT)")
+    )
 
-    # Plot sentiment change dots only at flip points
-    dot_colors = {"Buy": "red", "Hold": "orange", "Sell": "green"}
-    prev_signal = None
-    for entry in st.session_state.sentiment_history:
-        if entry["Signal"] != prev_signal:
-            time_match = price_data[price_data["Open time"] >= entry["Time"]]
-            if not time_match.empty:
-                dot_time = time_match.iloc[0]["Open time"]
-                dot_price = time_match.iloc[0]["Close"]
-                ax.scatter(dot_time, dot_price, color=dot_colors.get(entry["Signal"], "blue"), s=80, zorder=5)
-            prev_signal = entry["Signal"]
+    if not dot_df.empty:
+        dots = alt.Chart(dot_df).mark_point(size=100).encode(
+            x="Open time:T",
+            y="Close:Q",
+            color=alt.Color("Signal:N", scale=alt.Scale(domain=["Buy", "Hold", "Sell"], range=["red", "orange", "green"]))
+        )
+        chart = base + dots
+    else:
+        chart = base
 
-    ax.set_title("SOL/USDT Price Chart with Sentiment Dots")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Price (USDT)")
-    plt.xticks(rotation=90)
-    st.pyplot(fig)
+    st.altair_chart(chart.properties(height=400), use_container_width=True)
 
 with col2:
     st.subheader("📊 Sentiment")
@@ -102,7 +118,7 @@ with col2:
     st.progress(sentiment.get("Buy", 0) / 100)
     st.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
 
-# Sentiment history log
+# Log table
 history_df = pd.DataFrame([
     {"Time": entry["Time"].strftime("%H:%M:%S"), "Signal": entry["Signal"]}
     for entry in st.session_state.sentiment_history
