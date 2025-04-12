@@ -1,27 +1,42 @@
 
-import random
+# crypto_sentiment_oracle.py (fixed with proper Buy/Hold/Sell output)
 
-def get_combined_sentiment():
-    """
-    Mock implementation: In a real-world scenario, this would aggregate data from
-    CryptoPanic, Fear & Greed Index, Google Trends, on-chain metrics, etc.
-    """
-    sources = {
-        "CryptoPanic": random.uniform(-1, 1),
-        "FearGreedIndex": random.uniform(-1, 1),
-        "GoogleTrends": random.uniform(-1, 1),
-        "OnChainMetrics": random.uniform(-1, 1),
-        "TechAnalysis": random.uniform(-1, 1),
+def aggregate_sentiment():
+    # Example mock scores from each source (replace with real data fetch)
+    source_scores = {
+        "CryptoPanic": -0.718,
+        "FearGreedIndex": -0.427,
+        "GoogleTrends": 0.614,
+        "OnChainMetrics": 0.569,
+        "TechAnalysis": 0.62
     }
 
-    weighted_score = sum(sources.values()) / len(sources)
-    signal = "Buy" if weighted_score > 0.3 else "Sell" if weighted_score < -0.3 else "Hold"
+    # Combine all scores into a single weighted score
+    final_score = sum(source_scores.values()) / len(source_scores)
 
-    return {
-        "score": round(weighted_score, 3),
-        "signal": signal,
-        "sources": {k: round(v, 3) for k, v in sources.items()}
-    }
+    # Convert final_score into Buy/Hold/Sell percentages
+    if final_score > 0.33:
+        sentiment = {
+            "Buy": int(final_score * 100),
+            "Hold": int((1 - final_score) * 100),
+            "Sell": 0
+        }
+    elif final_score < -0.33:
+        sentiment = {
+            "Buy": 0,
+            "Hold": int((1 + final_score) * 100),
+            "Sell": int(-final_score * 100)
+        }
+    else:
+        sentiment = {
+            "Buy": int((final_score + 0.33) * 50),
+            "Hold": int((1 - abs(final_score)) * 100),
+            "Sell": int((0.33 - final_score) * 50)
+        }
 
-# Alias to match expected import in app.py
-aggregate_sentiment = get_combined_sentiment
+    # Add extra debug info
+    sentiment["score"] = round(final_score, 3)
+    sentiment["signal"] = "Buy" if final_score > 0.33 else "Sell" if final_score < -0.33 else "Hold"
+    sentiment["sources"] = source_scores
+
+    return sentiment
